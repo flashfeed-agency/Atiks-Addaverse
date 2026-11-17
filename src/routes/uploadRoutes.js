@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const db = require('../db');
 const { requireAuth, getUserOAuthClient } = require('../auth');
 const { extractDriveFileId, getDriveFileStream, getDriveFileMetadata } = require('../drive');
-const { initiateResumableUpload, streamToYouTubeResumableUrl } = require('../youtube');
+const { uploadVideoToYouTube } = require('../youtube');
 
 // In-memory registry of active streams for pause / resume / cancel control
 const activeStreams = new Map();
@@ -32,7 +32,6 @@ router.post('/start', requireAuth, async (req, res) => {
 
     // Prepare OAuth client
     const oauth2Client = await getUserOAuthClient(user);
-    const accessToken = (await oauth2Client.getAccessToken()).token;
 
     // Get metadata
     const metadata = await getDriveFileMetadata(fileId, oauth2Client);
@@ -86,22 +85,15 @@ router.post('/start', requireAuth, async (req, res) => {
         // Step 1: Open Google Drive stream
         const driveData = await getDriveFileStream(fileId, oauth2Client);
 
-        // Step 2: Initiate YouTube Resumable Upload Session
-        const uploadUrl = await initiateResumableUpload({
-          accessToken,
-          title: videoTitle,
-          description: description || `Uploaded via Atik's Addaverse direct from Google Drive.\nOriginal: ${driveData.name}`,
-          privacyStatus: privacyStatus || 'private',
-          fileSize: driveData.size,
-          mimeType: driveData.mimeType || 'video/mp4'
-        });
-
-        // Step 3: Stream video chunks directly through RAM to YouTube
+        // Step 2 & 3: Stream directly to YouTube using Google's Resilient Resumable SDK
         let lastReportedPercent = 0;
         let lastUpdateTime = Date.now();
 
-        const uploadResult = await streamToYouTubeResumableUrl({
-          uploadUrl,
+        const uploadResult = await uploadVideoToYouTube({
+          oauth2Client,
+          title: videoTitle,
+          description: description || `Uploaded via Atik's Addaverse direct from Google Drive.\nOriginal: ${driveData.name}`,
+          privacyStatus: privacyStatus || 'private',
           stream: driveData.stream,
           fileSize: driveData.size,
           mimeType: driveData.mimeType || 'video/mp4',
@@ -141,7 +133,7 @@ router.post('/start', requireAuth, async (req, res) => {
         const finalStatus = controller.isCancelled ? 'cancelled' : 'failed';
         await db.run(
           'UPDATE upload_jobs SET status = ?, error_message = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?',
-          [finalStatus, uploadError.message || 'Stream upload failed', jobId]
+          [finalStatus, uploadError.message || 'Upload failed', jobId]
         );
       }
     })();
