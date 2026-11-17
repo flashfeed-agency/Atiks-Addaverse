@@ -18,6 +18,10 @@ const statusBanner = document.getElementById('statusBanner');
 // Drive Player Elements
 const driveUrlInput = document.getElementById('driveUrlInput');
 const loadVideoBtn = document.getElementById('loadVideoBtn');
+const browseDriveBtn = document.getElementById('browseDriveBtn');
+const drivePickerModal = document.getElementById('drivePickerModal');
+const closeDrivePickerBtn = document.getElementById('closeDrivePickerBtn');
+const driveFilesList = document.getElementById('driveFilesList');
 const videoIframe = document.getElementById('videoIframe');
 const playerPlaceholder = document.getElementById('playerPlaceholder');
 const videoMetaCard = document.getElementById('videoMetaCard');
@@ -126,6 +130,7 @@ function updateYouTubeStatusUI(user) {
     ytIndicator.style.background = '#10b981'; // Green
     ytChannelName.innerText = user.channelTitle;
     ytConnectPrompt.style.display = 'none';
+    browseDriveBtn.style.display = 'inline-flex';
     startUploadBtn.disabled = !currentDriveFile;
 
     // Modal
@@ -136,8 +141,9 @@ function updateYouTubeStatusUI(user) {
     modalDisconnectBtn.style.display = 'block';
   } else {
     ytIndicator.style.background = '#f59e0b'; // Amber
-    ytChannelName.innerText = 'YouTube Disconnected';
+    ytChannelName.innerText = 'Google Disconnected';
     ytConnectPrompt.style.display = 'block';
+    browseDriveBtn.style.display = 'none';
     startUploadBtn.disabled = true;
 
     // Modal
@@ -411,9 +417,101 @@ driveUrlInput.addEventListener('keydown', (e) => {
   }
 });
 
+// Browse Google Drive Files Modal
+browseDriveBtn.addEventListener('click', async () => {
+  drivePickerModal.classList.add('active');
+  driveFilesList.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 30px;">Scanning your Google Drive for videos...</p>';
+
+  try {
+    const res = await fetch('/api/drive/my-files');
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.error || 'Failed to fetch files');
+    }
+
+    const files = data.files || [];
+    if (files.length === 0) {
+      driveFilesList.innerHTML = `
+        <div style="text-align: center; color: var(--text-muted); padding: 30px;">
+          No video files found in your Google Drive root folder.<br>
+          <span style="font-size: 0.8rem;">You can always paste any video link directly into the input box!</span>
+        </div>
+      `;
+      return;
+    }
+
+    driveFilesList.innerHTML = files.map(file => {
+      return `
+        <div class="drive-file-card" data-id="${file.id}" data-name="${file.name}" data-size="${file.size || 0}" data-embed="${file.embedUrl}" style="display: flex; align-items: center; justify-content: space-between; background: var(--bg-input); padding: 12px 16px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); cursor: pointer; transition: all 0.2s ease;">
+          <div style="display: flex; align-items: center; gap: 12px; overflow: hidden;">
+            <div style="font-size: 24px;">🎥</div>
+            <div style="overflow: hidden;">
+              <div style="font-weight: 600; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff;">${file.name}</div>
+              <div style="font-size: 0.72rem; color: var(--text-muted);">${formatBytes(file.size)}</div>
+            </div>
+          </div>
+          <button class="btn btn-primary btn-sm" style="font-size: 0.75rem; padding: 4px 12px;">Select & Play</button>
+        </div>
+      `;
+    }).join('');
+
+    // Attach click listeners to cards
+    document.querySelectorAll('.drive-file-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const fileId = card.getAttribute('data-id');
+        const fileName = card.getAttribute('data-name');
+        const fileSize = parseInt(card.getAttribute('data-size'), 10);
+        const embedUrl = card.getAttribute('data-embed');
+
+        currentDriveFile = {
+          fileId,
+          embedUrl,
+          name: fileName,
+          size: fileSize
+        };
+
+        driveUrlInput.value = `https://drive.google.com/file/d/${fileId}/view`;
+
+        // Render Preview Player
+        playerPlaceholder.style.display = 'none';
+        videoIframe.src = embedUrl;
+        videoIframe.style.display = 'block';
+
+        // Metadata Card
+        metaFileName.innerText = fileName;
+        metaFileSize.innerText = formatBytes(fileSize);
+        videoMetaCard.style.display = 'grid';
+
+        // Auto-fill Title Input
+        videoTitleInput.value = fileName.replace(/\.[^/.]+$/, "");
+
+        if (currentUser && currentUser.isYouTubeConnected) {
+          startUploadBtn.disabled = false;
+        }
+
+        drivePickerModal.classList.remove('active');
+        showBanner(`🎬 Loaded "${fileName}" from your Google Drive!`, 'success');
+      });
+    });
+
+  } catch (err) {
+    driveFilesList.innerHTML = `<p style="text-align: center; color: #ef4444; padding: 20px;">${err.message}</p>`;
+  }
+});
+
+closeDrivePickerBtn.addEventListener('click', () => {
+  drivePickerModal.classList.remove('active');
+});
+
+drivePickerModal.addEventListener('click', (e) => {
+  if (e.target === drivePickerModal) {
+    drivePickerModal.classList.remove('active');
+  }
+});
+
 connectYtBtn.addEventListener('click', () => {
-  settingsModal.classList.add('active');
-  modalAlert.style.display = 'none';
+  initiateYouTubeConnect();
 });
 ytStatusPill.addEventListener('click', () => {
   settingsModal.classList.add('active');

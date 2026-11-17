@@ -132,16 +132,27 @@ router.get('/me', requireAuth, async (req, res) => {
   });
 });
 
-// Generate Google OAuth URL for connecting YouTube
-router.get('/google/url', requireAuth, async (req, res) => {
+// Generate Google OAuth URL with Account Selector
+router.get('/google/url', async (req, res) => {
   try {
-    const user = req.user;
-    const clientId = user.google_client_id || config.google.clientId;
-    const clientSecret = user.google_client_secret || config.google.clientSecret;
+    let clientId = config.google.clientId;
+    let clientSecret = config.google.clientSecret;
+
+    // Check if logged in user has custom credentials
+    if (req.cookies && req.cookies.auth_token) {
+      try {
+        const decoded = jwt.verify(req.cookies.auth_token, config.jwtSecret);
+        const user = await db.get('SELECT google_client_id, google_client_secret FROM users WHERE id = ?', [decoded.userId]);
+        if (user && user.google_client_id) {
+          clientId = user.google_client_id;
+          clientSecret = user.google_client_secret;
+        }
+      } catch (e) {}
+    }
 
     if (!clientId || !clientSecret) {
       return res.status(400).json({
-        error: 'Google OAuth credentials not configured. Please enter your Google Client ID and Secret in settings or set environment variables.'
+        error: 'Google OAuth credentials not configured. Please add Google Client ID & Secret in settings or environment.'
       });
     }
 
@@ -154,15 +165,24 @@ router.get('/google/url', requireAuth, async (req, res) => {
     const scopes = [
       'https://www.googleapis.com/auth/youtube.upload',
       'https://www.googleapis.com/auth/youtube.readonly',
-      'https://www.googleapis.com/auth/drive.readonly'
+      'https://www.googleapis.com/auth/drive.readonly',
+      'https://www.googleapis.com/auth/userinfo.profile',
+      'https://www.googleapis.com/auth/userinfo.email'
     ];
 
-    // Pass user ID as state to bind callback securely to the logged in user
-    const state = JSON.stringify({ userId: user.id, ts: Date.now() });
+    let userId = null;
+    if (req.cookies && req.cookies.auth_token) {
+      try {
+        const decoded = jwt.verify(req.cookies.auth_token, config.jwtSecret);
+        userId = decoded.userId;
+      } catch (e) {}
+    }
+
+    const state = JSON.stringify({ userId, ts: Date.now() });
 
     const authUrl = oauth2Client.generateAuthUrl({
       access_type: 'offline',
-      prompt: 'consent',
+      prompt: 'select_account consent', // Always show Google Account Picker
       scope: scopes,
       state: Buffer.from(state).toString('base64')
     });
@@ -183,37 +203,35 @@ router.get('/google/callback', async (req, res) => {
       return res.redirect(`/dashboard.html?auth_error=${encodeURIComponent(error)}`);
     }
 
-    if (!code || !state) {
-      return res.redirect('/dashboard.html?auth_error=Missing_Code_Or_State');
+    if (!code) {
+      return res.redirect('/dashboard.html?auth_error=Missing_Code');
     }
 
-    let parsedState;
-    try {
-      parsedState = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
-    } catch (e) {
-      return res.redirect('/dashboard.html?auth_error=Invalid_State');
+    let parsedState = {};
+    if (state) {
+      try {
+        parsedState = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
+      } catch (e) {}
     }
-
-    const user = await db.get('SELECT * FROM users WHERE id = ?', [parsedState.userId]);
-    if (!user) {
-      return res.redirect('/login.html?error=UserNotFound');
-    }
-
-    const clientId = user.google_client_id || config.google.clientId;
-    const clientSecret = user.google_client_secret || config.google.clientSecret;
 
     const oauth2Client = new google.auth.OAuth2(
-      clientId,
-      clientSecret,
+      config.google.clientId,
+      config.google.clientSecret,
       config.google.redirectUri
     );
 
     const { tokens } = await oauth2Client.getToken(code);
     oauth2Client.setCredentials(tokens);
 
+    // Fetch user profile from Google
+    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+    const userInfo = await oauth2.userinfo.get();
+    const googleEmail = userInfo.data.email;
+    const googleName = userInfo.data.name || googleEmail.split('@')[0];
+
     // Fetch channel details to confirm connection
-    let channelTitle = 'My YouTube Channel';
-    let channelAvatar = '';
+    let channelTitle = googleName;
+    let channelAvatar = userInfo.data.picture || '';
     let channelId = '';
 
     try {
@@ -227,10 +245,35 @@ router.get('/google/callback', async (req, res) => {
         const item = channelRes.data.items[0];
         channelId = item.id;
         channelTitle = item.snippet.title;
-        channelAvatar = item.snippet.thumbnails?.default?.url || '';
+        channelAvatar = item.snippet.thumbnails?.default?.url || channelAvatar;
       }
     } catch (channelErr) {
       console.warn('Could not fetch channel details:', channelErr.message);
+    }
+
+    let targetUser = null;
+    if (parsedState.userId) {
+      targetUser = await db.get('SELECT * FROM users WHERE id = ?', [parsedState.userId]);
+    }
+
+    // If user clicked Google Connect without registering first, automatically create/log-in user!
+    if (!targetUser) {
+      targetUser = await db.get('SELECT * FROM users WHERE email = ?', [googleEmail]);
+      if (!targetUser) {
+        const randomPass = await hashPassword(Math.random().toString(36).slice(-10));
+        let username = googleName.toLowerCase().replace(/[^a-z0-9_]/g, '');
+        if (username.length < 3) username = 'user_' + Math.floor(Math.random() * 10000);
+
+        const existingUsername = await db.get('SELECT id FROM users WHERE username = ?', [username]);
+        if (existingUsername) username = username + '_' + Math.floor(Math.random() * 1000);
+
+        await db.run(
+          'INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)',
+          [username, googleEmail, randomPass]
+        );
+
+        targetUser = await db.get('SELECT * FROM users WHERE email = ?', [googleEmail]);
+      }
     }
 
     // Save tokens in database for this specific user
@@ -246,16 +289,24 @@ router.get('/google/callback', async (req, res) => {
       [
         tokens.access_token,
         tokens.refresh_token || null,
-        tokens.expiry_date || null,
+        tokens.expiry_date || (Date.now() + 3600000),
         channelId,
         channelTitle,
         channelAvatar,
-        user.id
+        targetUser.id
       ]
     );
 
-    console.log(`[OAuth] YouTube successfully connected for user ${user.username} (${channelTitle})`);
-    return res.redirect('/dashboard.html?youtube_connected=true');
+    // Set JWT auth cookie so user is logged in
+    const token = generateToken(targetUser);
+    res.cookie('auth_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+
+    console.log(`[OAuth] Google successfully connected for user ${targetUser.username} (${channelTitle})`);
+    return res.redirect('/dashboard.html?google_connected=true');
   } catch (err) {
     console.error('OAuth Callback processing error:', err);
     return res.redirect(`/dashboard.html?auth_error=${encodeURIComponent(err.message)}`);

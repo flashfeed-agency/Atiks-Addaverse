@@ -44,4 +44,39 @@ router.post('/parse', requireAuth, async (req, res) => {
   }
 });
 
+// Get videos directly from the user's connected Google Drive
+router.get('/my-files', requireAuth, async (req, res) => {
+  try {
+    if (!req.user.google_access_token) {
+      return res.status(400).json({ error: 'Please connect your Google account first.' });
+    }
+
+    const oauth2Client = await getUserOAuthClient(req.user);
+    const { google } = require('googleapis');
+    const drive = google.drive({ version: 'v3', auth: oauth2Client });
+
+    // Query drive for video files
+    const driveRes = await drive.files.list({
+      q: "mimeType contains 'video/' and trashed = false",
+      fields: 'files(id, name, size, mimeType, thumbnailLink, createdTime)',
+      pageSize: 30,
+      orderBy: 'createdTime desc'
+    });
+
+    const files = (driveRes.data.files || []).map(f => ({
+      id: f.id,
+      name: f.name,
+      size: f.size ? parseInt(f.size, 10) : null,
+      mimeType: f.mimeType,
+      thumbnailLink: f.thumbnailLink,
+      embedUrl: getDriveEmbedUrl(f.id)
+    }));
+
+    return res.json({ files });
+  } catch (err) {
+    console.error('Error listing user drive files:', err);
+    return res.status(500).json({ error: err.message || 'Failed to list Google Drive videos' });
+  }
+});
+
 module.exports = router;
