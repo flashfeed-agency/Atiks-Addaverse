@@ -132,6 +132,16 @@ router.get('/me', requireAuth, async (req, res) => {
   });
 });
 
+// Helper to determine exact redirect URI (works seamlessly on Render and localhost)
+function resolveRedirectUri(req) {
+  if (process.env.GOOGLE_REDIRECT_URI && process.env.GOOGLE_REDIRECT_URI.trim()) {
+    return process.env.GOOGLE_REDIRECT_URI.trim();
+  }
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+  const host = req.headers['x-forwarded-host'] || req.get('host');
+  return `${protocol}://${host}/api/auth/google/callback`;
+}
+
 // Generate Google OAuth URL with Account Selector
 router.get('/google/url', async (req, res) => {
   try {
@@ -156,10 +166,13 @@ router.get('/google/url', async (req, res) => {
       });
     }
 
+    const redirectUri = resolveRedirectUri(req);
+    console.log('[OAuth] Generated auth URL using redirect URI:', redirectUri);
+
     const oauth2Client = new google.auth.OAuth2(
       clientId,
       clientSecret,
-      config.google.redirectUri
+      redirectUri
     );
 
     const scopes = [
@@ -187,7 +200,7 @@ router.get('/google/url', async (req, res) => {
       state: Buffer.from(state).toString('base64')
     });
 
-    return res.json({ authUrl });
+    return res.json({ authUrl, redirectUri });
   } catch (err) {
     console.error('Google auth url error:', err);
     return res.status(500).json({ error: err.message || 'Failed to generate Google auth URL' });
@@ -214,10 +227,13 @@ router.get('/google/callback', async (req, res) => {
       } catch (e) {}
     }
 
+    const redirectUri = resolveRedirectUri(req);
+    console.log('[OAuth] Processing callback with redirect URI:', redirectUri);
+
     const oauth2Client = new google.auth.OAuth2(
       config.google.clientId,
       config.google.clientSecret,
-      config.google.redirectUri
+      redirectUri
     );
 
     const { tokens } = await oauth2Client.getToken(code);

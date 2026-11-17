@@ -11,6 +11,9 @@ const userRoutes = require('./src/routes/userRoutes');
 
 const app = express();
 
+// Trust reverse proxy (Render.com, Heroku, etc.)
+app.set('trust proxy', 1);
+
 // Middlewares
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
