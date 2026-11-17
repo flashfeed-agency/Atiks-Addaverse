@@ -127,7 +127,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
             </svg>
-            <p>Paste a Google Drive video link above and click <strong>Load & Play</strong> to stream without downloading.</p>
+            <p>Paste a Google Drive video link above and click <strong>Load & Play</strong> to play without downloading.</p>
           </div>
           <iframe id="videoIframe" src="" allow="autoplay; fullscreen" style="display: none;"></iframe>
         </div>
@@ -144,7 +144,7 @@
           </div>
           <div class="meta-item">
             <div class="meta-label">Status</div>
-            <div class="meta-value" style="color: var(--accent-success);">Ready to Stream</div>
+            <div class="meta-value" style="color: var(--accent-success);">Ready to Upload</div>
           </div>
         </div>
       </section>
@@ -195,11 +195,11 @@
             <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
             </svg>
-            <span>Stream Direct to YouTube</span>
+            <span>Upload Direct to YouTube</span>
           </button>
         </form>
 
-        <!-- Live Streaming Pipeline Visualizer -->
+        <!-- Live Upload Pipeline Visualizer -->
         <div id="pipelineContainer" class="pipeline-box" style="display: none;">
           <div class="pipeline-flow">
             <div id="stepDrive" class="flow-step done">
@@ -209,7 +209,7 @@
             <div class="flow-arrow">➔</div>
             <div id="stepPipe" class="flow-step active">
               <div class="flow-icon">⚡</div>
-              <span>Cloud Pipe</span>
+              <span>Uploading</span>
             </div>
             <div class="flow-arrow">➔</div>
             <div id="stepYt" class="flow-step">
@@ -223,8 +223,18 @@
           </div>
 
           <div class="progress-stats">
-            <span id="transferStats">Connecting cloud stream...</span>
+            <span id="transferStats">Connecting upload...</span>
             <span id="percentStats">0%</span>
+          </div>
+
+          <!-- Controls for Active Upload: Pause / Resume / Cancel -->
+          <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-color);">
+            <button id="pauseUploadBtn" type="button" class="btn btn-secondary btn-sm">
+              ⏸️ Pause Upload
+            </button>
+            <button id="cancelUploadBtn" type="button" class="btn btn-secondary btn-sm" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.4);">
+              ⏹️ Cancel & Discard
+            </button>
           </div>
         </div>
 
@@ -383,7 +393,7 @@
   <!-- Footer -->
   <footer>
     <p>
-      <strong>Atik's Addaverse</strong> &bull; Direct Google Drive to YouTube Cloud Streamer
+      <strong>Atik's Addaverse</strong> &bull; Direct Google Drive to YouTube Cloud Uploader
     </p>
     <p style="margin-top: 6px;">
       Crafted for <a href="https://www.youtube.com/@Addaverse_atik" target="_blank" rel="noopener">@Addaverse_atik</a> anime & manga storytelling. Multi-user & Privacy protected.

@@ -6,6 +6,9 @@ const { requireAuth, getUserOAuthClient } = require('../auth');
 const { extractDriveFileId, getDriveFileStream, getDriveFileMetadata } = require('../drive');
 const { initiateResumableUpload, streamToYouTubeResumableUrl } = require('../youtube');
 
+// In-memory registry of active streams for pause / resume / cancel control
+const activeStreams = new Map();
+
 // Start direct cloud-to-cloud upload from Google Drive to YouTube
 router.post('/start', requireAuth, async (req, res) => {
   try {
@@ -57,6 +60,14 @@ router.post('/start', requireAuth, async (req, res) => {
       ]
     );
 
+    // Controller object for pause/resume/cancel
+    const controller = {
+      isPaused: false,
+      isCancelled: false,
+      userId: user.id
+    };
+    activeStreams.set(jobId, controller);
+
     // Return immediate response with jobId so UI can monitor progress
     res.json({
       message: 'Cloud-to-cloud upload started!',
@@ -94,10 +105,10 @@ router.post('/start', requireAuth, async (req, res) => {
           stream: driveData.stream,
           fileSize: driveData.size,
           mimeType: driveData.mimeType || 'video/mp4',
+          controller,
           onProgress: async ({ bytesUploaded, totalBytes, percent }) => {
             const now = Date.now();
-            // Throttled database update (every 2% or every 2 seconds)
-            if (percent !== lastReportedPercent && (now - lastUpdateTime > 1500 || percent === 100)) {
+            if (percent !== lastReportedPercent && (now - lastUpdateTime > 1000 || percent === 100)) {
               lastReportedPercent = percent;
               lastUpdateTime = now;
               try {
@@ -105,15 +116,15 @@ router.post('/start', requireAuth, async (req, res) => {
                   'UPDATE upload_jobs SET bytes_uploaded = ?, total_bytes = ?, progress_percent = ? WHERE id = ?',
                   [bytesUploaded, totalBytes || 0, percent, jobId]
                 );
-              } catch (e) {
-                // Ignore DB busy error during fast streaming
-              }
+              } catch (e) {}
             }
           }
         });
 
         // Step 4: Mark completed with YouTube video ID
         console.log(`[UploadJob ${jobId}] SUCCESS! Uploaded videoId: ${uploadResult.videoId}`);
+        activeStreams.delete(jobId);
+
         await db.run(
           `UPDATE upload_jobs SET 
             status = 'completed', 
@@ -125,10 +136,12 @@ router.post('/start', requireAuth, async (req, res) => {
         );
 
       } catch (uploadError) {
-        console.error(`[UploadJob ${jobId}] FAILED:`, uploadError);
+        console.error(`[UploadJob ${jobId}] FAILED:`, uploadError.message);
+        activeStreams.delete(jobId);
+        const finalStatus = controller.isCancelled ? 'cancelled' : 'failed';
         await db.run(
           'UPDATE upload_jobs SET status = ?, error_message = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?',
-          ['failed', uploadError.message || 'Stream upload failed', jobId]
+          [finalStatus, uploadError.message || 'Stream upload failed', jobId]
         );
       }
     })();
@@ -190,6 +203,68 @@ router.get('/jobs/:id', requireAuth, async (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to retrieve job status' });
+  }
+});
+
+// Pause an active upload
+router.post('/jobs/:id/pause', requireAuth, async (req, res) => {
+  const active = activeStreams.get(req.params.id);
+  if (!active || active.userId !== req.user.id) {
+    return res.status(404).json({ error: 'Active upload not found or already completed.' });
+  }
+
+  if (active.pause) {
+    active.pause();
+    await db.run('UPDATE upload_jobs SET status = ? WHERE id = ?', ['paused', req.params.id]);
+    return res.json({ message: 'Upload paused.', status: 'paused' });
+  }
+  return res.status(400).json({ error: 'Cannot pause stream.' });
+});
+
+// Resume a paused upload
+router.post('/jobs/:id/resume', requireAuth, async (req, res) => {
+  const active = activeStreams.get(req.params.id);
+  if (!active || active.userId !== req.user.id) {
+    return res.status(404).json({ error: 'Active upload not found.' });
+  }
+
+  if (active.resume) {
+    active.resume();
+    await db.run('UPDATE upload_jobs SET status = ? WHERE id = ?', ['streaming', req.params.id]);
+    return res.json({ message: 'Upload resumed.', status: 'streaming' });
+  }
+  return res.status(400).json({ error: 'Cannot resume stream.' });
+});
+
+// Cancel an active upload
+router.post('/jobs/:id/cancel', requireAuth, async (req, res) => {
+  const active = activeStreams.get(req.params.id);
+  if (active && active.userId === req.user.id) {
+    if (active.cancel) active.cancel();
+    activeStreams.delete(req.params.id);
+  }
+
+  await db.run(
+    'UPDATE upload_jobs SET status = ?, error_message = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?',
+    ['cancelled', 'Cancelled by user', req.params.id, req.user.id]
+  );
+
+  return res.json({ message: 'Upload cancelled.', status: 'cancelled' });
+});
+
+// Delete a job from upload history
+router.delete('/jobs/:id', requireAuth, async (req, res) => {
+  try {
+    const active = activeStreams.get(req.params.id);
+    if (active && active.userId === req.user.id) {
+      if (active.cancel) active.cancel();
+      activeStreams.delete(req.params.id);
+    }
+
+    await db.run('DELETE FROM upload_jobs WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
+    return res.json({ message: 'Job deleted from history.' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to delete job.' });
   }
 });
 

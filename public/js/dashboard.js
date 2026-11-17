@@ -43,6 +43,11 @@ const percentStats = document.getElementById('percentStats');
 const stepDrive = document.getElementById('stepDrive');
 const stepPipe = document.getElementById('stepPipe');
 const stepYt = document.getElementById('stepYt');
+const pauseUploadBtn = document.getElementById('pauseUploadBtn');
+const cancelUploadBtn = document.getElementById('cancelUploadBtn');
+
+let currentActiveJobId = null;
+let isJobPaused = false;
 
 // Success Banner
 const uploadSuccessBanner = document.getElementById('uploadSuccessBanner');
@@ -107,11 +112,11 @@ async function initDashboard() {
 
     // Check URL parameters for OAuth callbacks
     const params = new URLSearchParams(window.location.search);
-    if (params.get('youtube_connected') === 'true') {
-      showBanner('✅ YouTube channel connected successfully! You are ready to stream.', 'success');
+    if (params.get('youtube_connected') === 'true' || params.get('google_connected') === 'true') {
+      showBanner('✅ Google Account connected successfully! You are ready to upload.', 'success');
       window.history.replaceState({}, document.title, window.location.pathname);
     } else if (params.get('auth_error')) {
-      showBanner('❌ YouTube connection error: ' + decodeURIComponent(params.get('auth_error')), 'error');
+      showBanner('❌ Google connection error: ' + decodeURIComponent(params.get('auth_error')), 'error');
       window.history.replaceState({}, document.title, window.location.pathname);
     }
 
@@ -221,7 +226,7 @@ async function handleLoadVideo() {
       startUploadBtn.disabled = false;
     }
 
-    showBanner('🎬 Video loaded! You can preview it above and stream directly to YouTube.', 'success');
+    showBanner('🎬 Video loaded! You can preview it above and upload directly to YouTube.', 'success');
 
   } catch (err) {
     showBanner(err.message, 'error');
@@ -250,7 +255,7 @@ uploadForm.addEventListener('submit', async (e) => {
   const description = videoDescInput.value.trim();
 
   startUploadBtn.disabled = true;
-  startUploadBtn.innerHTML = `<span>Streaming to YouTube...</span>`;
+  startUploadBtn.innerHTML = `<span>Uploading to YouTube...</span>`;
   uploadSuccessBanner.style.display = 'none';
   pipelineContainer.style.display = 'block';
 
@@ -260,7 +265,7 @@ uploadForm.addEventListener('submit', async (e) => {
   stepYt.className = 'flow-step';
   liveProgressBar.style.width = '0%';
   percentStats.innerText = '0%';
-  transferStats.innerText = 'Initializing cloud stream...';
+  transferStats.innerText = 'Initializing upload...';
 
   try {
     const res = await fetch('/api/upload/start', {
@@ -285,13 +290,19 @@ uploadForm.addEventListener('submit', async (e) => {
   } catch (err) {
     showBanner(err.message, 'error');
     startUploadBtn.disabled = false;
-    startUploadBtn.innerHTML = `<span>Stream Direct to YouTube</span>`;
+    startUploadBtn.innerHTML = `<span>Upload Direct to YouTube</span>`;
     pipelineContainer.style.display = 'none';
   }
 });
 
 // 5. Poll Job Progress
 function pollJobProgress(jobId) {
+  currentActiveJobId = jobId;
+  isJobPaused = false;
+  pauseUploadBtn.innerText = '⏸️ Pause Upload';
+  pauseUploadBtn.style.display = 'inline-flex';
+  cancelUploadBtn.style.display = 'inline-flex';
+
   if (activeJobPolling) clearInterval(activeJobPolling);
 
   activeJobPolling = setInterval(async () => {
@@ -306,10 +317,20 @@ function pollJobProgress(jobId) {
       liveProgressBar.style.width = `${percent}%`;
       percentStats.innerText = `${percent}%`;
 
-      if (job.total_bytes && job.total_bytes > 0) {
-        transferStats.innerText = `Piping: ${formatBytes(job.bytes_uploaded)} / ${formatBytes(job.total_bytes)}`;
-      } else {
-        transferStats.innerText = `Streaming: ${formatBytes(job.bytes_uploaded)} transferred`;
+      if (job.status === 'paused') {
+        isJobPaused = true;
+        pauseUploadBtn.innerText = '▶️ Resume Upload';
+        transferStats.innerText = `⏸️ Paused at ${percent}% (${formatBytes(job.bytes_uploaded)} / ${formatBytes(job.total_bytes)})`;
+        stepPipe.className = 'flow-step';
+      } else if (job.status === 'streaming') {
+        isJobPaused = false;
+        pauseUploadBtn.innerText = '⏸️ Pause Upload';
+        stepPipe.className = 'flow-step active';
+        if (job.total_bytes && job.total_bytes > 0) {
+          transferStats.innerText = `Uploading: ${formatBytes(job.bytes_uploaded)} / ${formatBytes(job.total_bytes)}`;
+        } else {
+          transferStats.innerText = `Uploading: ${formatBytes(job.bytes_uploaded)} transferred`;
+        }
       }
 
       // Check Status
@@ -321,24 +342,38 @@ function pollJobProgress(jobId) {
         percentStats.innerText = '100%';
         transferStats.innerText = 'Completed! Ready in YouTube Studio.';
 
+        pauseUploadBtn.style.display = 'none';
+        cancelUploadBtn.style.display = 'none';
+
         // Setup Studio Link
         studioEditBtn.href = job.studioUrl;
         watchYtBtn.href = job.watchUrl;
         uploadSuccessBanner.style.display = 'block';
 
         startUploadBtn.disabled = false;
-        startUploadBtn.innerHTML = `<span>Stream Direct to YouTube</span>`;
+        startUploadBtn.innerHTML = `<span>Upload Direct to YouTube</span>`;
 
+        loadUploadHistory();
+      } else if (job.status === 'cancelled') {
+        clearInterval(activeJobPolling);
+        transferStats.innerText = 'Upload cancelled by user.';
+        showBanner('Upload cancelled.', 'error');
+        pauseUploadBtn.style.display = 'none';
+        cancelUploadBtn.style.display = 'none';
+        startUploadBtn.disabled = false;
+        startUploadBtn.innerHTML = `<span>Upload Direct to YouTube</span>`;
         loadUploadHistory();
       } else if (job.status === 'failed') {
         clearInterval(activeJobPolling);
         stepPipe.className = 'flow-step active';
         stepYt.className = 'flow-step';
-        transferStats.innerText = 'Upload failed: ' + (job.error_message || 'Stream error');
+        transferStats.innerText = 'Upload failed: ' + (job.error_message || 'Upload error');
         showBanner('Upload failed: ' + (job.error_message || 'Please check your connection'), 'error');
 
+        pauseUploadBtn.style.display = 'none';
+        cancelUploadBtn.style.display = 'none';
         startUploadBtn.disabled = false;
-        startUploadBtn.innerHTML = `<span>Stream Direct to YouTube</span>`;
+        startUploadBtn.innerHTML = `<span>Upload Direct to YouTube</span>`;
         loadUploadHistory();
       }
 
@@ -347,6 +382,53 @@ function pollJobProgress(jobId) {
     }
   }, 1500);
 }
+
+// Pause / Resume Button Handler
+pauseUploadBtn.addEventListener('click', async () => {
+  if (!currentActiveJobId) return;
+
+  try {
+    if (isJobPaused) {
+      // Resume
+      const res = await fetch(`/api/upload/jobs/${currentActiveJobId}/resume`, { method: 'POST' });
+      if (res.ok) {
+        isJobPaused = false;
+        pauseUploadBtn.innerText = '⏸️ Pause Upload';
+        transferStats.innerText = 'Resuming upload...';
+      }
+    } else {
+      // Pause
+      const res = await fetch(`/api/upload/jobs/${currentActiveJobId}/pause`, { method: 'POST' });
+      if (res.ok) {
+        isJobPaused = true;
+        pauseUploadBtn.innerText = '▶️ Resume Upload';
+        transferStats.innerText = 'Upload paused.';
+      }
+    }
+  } catch (err) {
+    showBanner('Failed to toggle pause: ' + err.message, 'error');
+  }
+});
+
+// Cancel Upload Button Handler
+cancelUploadBtn.addEventListener('click', async () => {
+  if (!currentActiveJobId) return;
+  if (!confirm('Are you sure you want to cancel this upload?')) return;
+
+  try {
+    const res = await fetch(`/api/upload/jobs/${currentActiveJobId}/cancel`, { method: 'POST' });
+    if (res.ok) {
+      showBanner('Upload cancelled successfully.', 'error');
+      if (activeJobPolling) clearInterval(activeJobPolling);
+      pipelineContainer.style.display = 'none';
+      startUploadBtn.disabled = false;
+      startUploadBtn.innerHTML = `<span>Upload Direct to YouTube</span>`;
+      loadUploadHistory();
+    }
+  } catch (err) {
+    showBanner('Failed to cancel upload: ' + err.message, 'error');
+  }
+});
 
 // 6. Load Upload History (Private to Logged In User)
 async function loadUploadHistory() {
@@ -361,7 +443,7 @@ async function loadUploadHistory() {
       historyTableBody.innerHTML = `
         <tr>
           <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 30px;">
-            No uploads yet. Paste a Google Drive video above to make your first cloud stream!
+            No uploads yet. Paste a Google Drive video above to start your first upload!
           </td>
         </tr>
       `;
@@ -377,19 +459,33 @@ async function loadUploadHistory() {
       if (job.status === 'completed') {
         statusBadge = '<span class="badge badge-completed">Completed</span>';
       } else if (job.status === 'streaming' || job.status === 'pending') {
-        statusBadge = '<span class="badge badge-streaming">Streaming</span>';
+        statusBadge = '<span class="badge badge-streaming">Uploading</span>';
+      } else if (job.status === 'paused') {
+        statusBadge = '<span class="badge badge-streaming" style="color:#f59e0b;">Paused</span>';
+      } else if (job.status === 'cancelled') {
+        statusBadge = '<span class="badge badge-failed" style="color:#94a3b8; border-color:#64748b;">Cancelled</span>';
       } else {
         statusBadge = '<span class="badge badge-failed">Failed</span>';
       }
 
-      let studioAction = '-';
+      let studioAction = `
+        <div style="display: flex; gap: 6px; align-items: center;">
+      `;
+
       if (job.youtube_video_id) {
-        studioAction = `
+        studioAction += `
           <a href="https://studio.youtube.com/video/${job.youtube_video_id}/edit" target="_blank" rel="noopener" class="btn btn-youtube btn-sm" style="padding: 4px 10px; font-size: 0.76rem;">
             Studio ➔
           </a>
         `;
       }
+
+      studioAction += `
+          <button class="btn btn-secondary btn-sm delete-job-btn" data-id="${job.id}" style="padding: 4px 8px; font-size: 0.76rem; color: #ef4444;" title="Delete Record">
+            🗑️
+          </button>
+        </div>
+      `;
 
       return `
         <tr>
@@ -402,6 +498,22 @@ async function loadUploadHistory() {
         </tr>
       `;
     }).join('');
+
+    // Attach delete listeners
+    document.querySelectorAll('.delete-job-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const jobId = btn.getAttribute('data-id');
+        if (!confirm('Delete this upload record from history?')) return;
+        try {
+          const delRes = await fetch(`/api/upload/jobs/${jobId}`, { method: 'DELETE' });
+          if (delRes.ok) {
+            loadUploadHistory();
+          }
+        } catch (err) {
+          alert('Failed to delete job: ' + err.message);
+        }
+      });
+    });
 
   } catch (err) {
     console.error('Failed to load history:', err);

@@ -59,6 +59,7 @@ function streamToYouTubeResumableUrl({
   stream,
   fileSize = null,
   mimeType = 'video/mp4',
+  controller = null,
   onProgress = () => {}
 }) {
   return new Promise((resolve, reject) => {
@@ -103,17 +104,41 @@ function streamToYouTubeResumableUrl({
             reject(new Error(`Failed to parse YouTube upload response: ${responseBody}`));
           }
         } else {
+          if (controller && controller.isCancelled) {
+            return reject(new Error('Upload cancelled by user.'));
+          }
           reject(new Error(`YouTube upload returned status ${res.statusCode}: ${responseBody}`));
         }
       });
     });
 
+    // Wire up pause, resume, cancel hooks to controller
+    if (controller) {
+      controller.pause = () => {
+        controller.isPaused = true;
+        stream.pause();
+      };
+      controller.resume = () => {
+        controller.isPaused = false;
+        stream.resume();
+      };
+      controller.cancel = () => {
+        controller.isCancelled = true;
+        try { stream.destroy(); } catch (e) {}
+        try { req.destroy(); } catch (e) {}
+      };
+    }
+
     req.on('error', (err) => {
+      if (controller && controller.isCancelled) {
+        return reject(new Error('Upload cancelled by user.'));
+      }
       reject(err);
     });
 
     // Track data flowing through the pipe
     stream.on('data', (chunk) => {
+      if (controller && controller.isCancelled) return;
       bytesUploaded += chunk.length;
       let percent = 0;
       if (fileSize && fileSize > 0) {
@@ -127,6 +152,9 @@ function streamToYouTubeResumableUrl({
     });
 
     stream.on('error', (err) => {
+      if (controller && controller.isCancelled) {
+        return reject(new Error('Upload cancelled by user.'));
+      }
       req.destroy();
       reject(new Error(`Google Drive stream interrupted: ${err.message}`));
     });
