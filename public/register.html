@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Create Account - Atik's Addaverse</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="auth-wrapper">
+    <div class="auth-card">
+      <div class="auth-header">
+        <div class="auth-logo">🎬</div>
+        <h1 class="auth-title">Join Addaverse</h1>
+        <p class="auth-subtitle">Private Cloud Creator Space for Atik & Team</p>
+      </div>
+
+      <div id="alertBox" class="alert alert-error"></div>
+
+      <form id="registerForm">
+        <div class="form-group">
+          <label for="usernameInput">Username</label>
+          <input type="text" id="usernameInput" class="input-box" placeholder="e.g. atik_creator" required autofocus>
+        </div>
+
+        <div class="form-group">
+          <label for="emailInput">Email Address</label>
+          <input type="email" id="emailInput" class="input-box" placeholder="name@example.com" required>
+        </div>
+
+        <div class="form-group">
+          <label for="passwordInput">Password (min 6 characters)</label>
+          <input type="password" id="passwordInput" class="input-box" placeholder="••••••••" minlength="6" required>
+        </div>
+
+        <div class="form-group">
+          <label for="confirmPasswordInput">Confirm Password</label>
+          <input type="password" id="confirmPasswordInput" class="input-box" placeholder="••••••••" minlength="6" required>
+        </div>
+
+        <button type="submit" id="submitBtn" class="btn btn-primary btn-block">
+          <span>Create Account</span>
+        </button>
+      </form>
+
+      <p style="margin-top: 22px; text-align: center; font-size: 0.88rem; color: var(--text-secondary);">
+        Already have an account? <a href="/login.html">Sign In</a>
+      </p>
+
+      <div style="margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border-color); text-align: center; font-size: 0.78rem; color: var(--text-muted);">
+        Every user's Drive links, YouTube uploads & tokens are 100% private.
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/auth.js"></script>
+  <script>
+    document.getElementById('registerForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = document.getElementById('usernameInput').value.trim();
+      const email = document.getElementById('emailInput').value.trim();
+      const password = document.getElementById('passwordInput').value;
+      const confirmPassword = document.getElementById('confirmPasswordInput').value;
+      const alertBox = document.getElementById('alertBox');
+      const submitBtn = document.getElementById('submitBtn');
+
+      if (password !== confirmPassword) {
+        alertBox.innerText = 'Passwords do not match.';
+        alertBox.style.display = 'block';
+        return;
+      }
+
+      alertBox.style.display = 'none';
+      submitBtn.disabled = true;
+      submitBtn.innerText = 'Creating account...';
+
+      try {
+        const res = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, email, password })
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || 'Failed to create account');
+        }
+
+        window.location.href = '/dashboard.html';
+      } catch (err) {
+        alertBox.innerText = err.message;
+        alertBox.style.display = 'block';
+        submitBtn.disabled = false;
+        submitBtn.innerText = 'Create Account';
+      }
+    });
+  </script>
+</body>
+</html>
