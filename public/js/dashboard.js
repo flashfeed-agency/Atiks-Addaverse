@@ -59,6 +59,8 @@ const modalDisconnectBtn = document.getElementById('modalDisconnectBtn');
 const customClientId = document.getElementById('customClientId');
 const customClientSecret = document.getElementById('customClientSecret');
 const saveCredentialsBtn = document.getElementById('saveCredentialsBtn');
+const quickTokenInput = document.getElementById('quickTokenInput');
+const quickConnectBtn = document.getElementById('quickConnectBtn');
 const modalAlert = document.getElementById('modalAlert');
 
 // Format file size helper
@@ -409,7 +411,10 @@ driveUrlInput.addEventListener('keydown', (e) => {
   }
 });
 
-connectYtBtn.addEventListener('click', initiateYouTubeConnect);
+connectYtBtn.addEventListener('click', () => {
+  settingsModal.classList.add('active');
+  modalAlert.style.display = 'none';
+});
 ytStatusPill.addEventListener('click', () => {
   settingsModal.classList.add('active');
 });
@@ -447,6 +452,47 @@ modalDisconnectBtn.addEventListener('click', async () => {
     }
   } catch (e) {
     alert('Failed to disconnect');
+  }
+});
+
+// Quick Token Connect (Zero Developer Setup)
+quickConnectBtn.addEventListener('click', async () => {
+  const token = quickTokenInput.value.trim();
+  if (!token) {
+    modalAlert.className = 'alert alert-error';
+    modalAlert.innerText = 'Please paste your Google OAuth token first.';
+    modalAlert.style.display = 'block';
+    return;
+  }
+
+  quickConnectBtn.disabled = true;
+  quickConnectBtn.innerText = 'Connecting...';
+  modalAlert.style.display = 'none';
+
+  try {
+    const res = await fetch('/api/user/quick-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token })
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to connect');
+
+    modalAlert.className = 'alert alert-success';
+    modalAlert.innerText = data.message || 'Connected successfully!';
+    modalAlert.style.display = 'block';
+
+    setTimeout(() => {
+      window.location.reload();
+    }, 1000);
+
+  } catch (err) {
+    modalAlert.className = 'alert alert-error';
+    modalAlert.innerText = err.message;
+    modalAlert.style.display = 'block';
+    quickConnectBtn.disabled = false;
+    quickConnectBtn.innerText = 'Connect';
   }
 });
 

@@ -306,26 +306,47 @@
 
       <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 20px 0;">
 
-      <h4 style="font-size: 0.95rem; margin-bottom: 8px;">Custom Google Cloud API Credentials (Optional)</h4>
-      <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 14px;">
-        Leave blank to use default server credentials, or enter your own Google Cloud OAuth 2.0 Client credentials:
-      </p>
-
-      <div class="form-group">
-        <label for="customClientId">Google Client ID</label>
-        <input type="text" id="customClientId" class="input-box" placeholder="e.g. 123456789-abc.apps.googleusercontent.com">
+      <!-- Quick 30-Second Connect (No Google Cloud Project Needed!) -->
+      <div style="background: rgba(255, 32, 78, 0.08); border: 1px solid rgba(255, 32, 78, 0.3); border-radius: var(--radius-sm); padding: 16px; margin-bottom: 20px;">
+        <h4 style="font-size: 0.95rem; color: #fff; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+          <span>⚡ 30-Second Quick Connect</span>
+          <span style="font-size: 0.7rem; background: var(--crimson); color: #fff; padding: 2px 6px; border-radius: 4px;">NO GOOGLE CLOUD NEEDED</span>
+        </h4>
+        <p style="font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 12px;">
+          No credit card and no developer console required. Get a 1-click token directly from Google:
+        </p>
+        <ol style="font-size: 0.78rem; color: var(--text-secondary); margin-left: 18px; margin-bottom: 14px; line-height: 1.6;">
+          <li>Click <a href="https://developers.google.com/oauthplayground/#step1&apisSelect=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fyoutube.upload&url=https%3A%2F%2F&content_type=application%2Fjson&http_method=GET&useErrorParam=false" target="_blank" rel="noopener" style="color: var(--crimson); font-weight: 700; text-decoration: underline;">👉 Open Google OAuth Playground</a>.</li>
+          <li>Click the blue <strong>"Authorize APIs"</strong> button and log into your YouTube Google account.</li>
+          <li>Click <strong>"Exchange authorization code for tokens"</strong>, then copy the <strong>Access token</strong>.</li>
+        </ol>
+        
+        <div style="display: flex; gap: 8px;">
+          <input type="password" id="quickTokenInput" class="input-box" placeholder="Paste your Access token here (ya29...)" style="flex: 1; font-size: 0.82rem;">
+          <button id="quickConnectBtn" class="btn btn-primary btn-sm">
+            Connect
+          </button>
+        </div>
       </div>
 
-      <div class="form-group">
-        <label for="customClientSecret">Google Client Secret</label>
-        <input type="password" id="customClientSecret" class="input-box" placeholder="e.g. GOCSPX-...">
-      </div>
+      <details style="font-size: 0.8rem; color: var(--text-muted); cursor: pointer;">
+        <summary style="font-weight: 600; margin-bottom: 10px;">Advanced: Custom Google Cloud Client ID (Optional)</summary>
+        <div class="form-group" style="margin-top: 10px;">
+          <label for="customClientId">Google Client ID</label>
+          <input type="text" id="customClientId" class="input-box" placeholder="123456789-abc.apps.googleusercontent.com">
+        </div>
 
-      <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
-        <button id="saveCredentialsBtn" class="btn btn-primary btn-sm">
-          Save Credentials
-        </button>
-      </div>
+        <div class="form-group">
+          <label for="customClientSecret">Google Client Secret</label>
+          <input type="password" id="customClientSecret" class="input-box" placeholder="GOCSPX-...">
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; margin-top: 10px;">
+          <button id="saveCredentialsBtn" class="btn btn-secondary btn-sm">
+            Save Client Credentials
+          </button>
+        </div>
+      </details>
     </div>
   </div>
 
