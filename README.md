@@ -50,7 +50,33 @@ Open your browser at: **`http://localhost:3000`**
 
 ---
 
-## 🔑 Setting Up Google OAuth (YouTube Uploads)
+## ⚡ 30-Second Quick Connect (Zero Google Cloud Console Setup!)
+
+**You do NOT need to create a Google Cloud project or add a credit card.**
+
+To connect your YouTube channel in 30 seconds:
+1. Open the app (`http://localhost:3000` or on Render).
+2. Click **Connect YouTube Channel**.
+3. In the modal, click the pre-configured link: [Google OAuth Playground](https://developers.google.com/oauthplayground/#step1&apisSelect=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fyoutube.upload&url=https%3A%2F%2F&content_type=application%2Fjson&http_method=GET&useErrorParam=false).
+4. Click the blue **"Authorize APIs"** button and log in with your YouTube account.
+5. Click **"Exchange authorization code for tokens"**.
+6. Copy the **Access token** (starts with `ya29...`) and paste it into the app.
+7. Click **Connect**!
+
+You are now ready to stream any Google Drive video straight into YouTube!
+
+---
+
+## 📓 Alternative: 1-Click Google Colab Notebook
+
+We also include **`Atiks_Addaverse_Studio.ipynb`**:
+* Upload this `.ipynb` file to [Google Colab](https://colab.research.google.com/).
+* It runs on Google's cloud servers with zero installation.
+* Paste your Drive link, click Run, sign in with Google in 1 click, and it streams your video directly to YouTube in seconds!
+
+---
+
+## 🔑 Optional: Setting Up Full Google OAuth Client ID (For Production)
 
 To allow the application to stream videos directly into your YouTube channel:
 
