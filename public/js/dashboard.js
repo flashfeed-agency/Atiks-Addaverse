@@ -39,6 +39,8 @@ const startUploadBtn = document.getElementById('startUploadBtn');
 // Pipeline Elements
 const pipelineContainer = document.getElementById('pipelineContainer');
 const liveProgressBar = document.getElementById('liveProgressBar');
+const liveSpeedDisplay = document.getElementById('liveSpeedDisplay');
+const liveEtaDisplay = document.getElementById('liveEtaDisplay');
 const transferStats = document.getElementById('transferStats');
 const percentStats = document.getElementById('percentStats');
 const stepDrive = document.getElementById('stepDrive');
@@ -49,6 +51,30 @@ const cancelUploadBtn = document.getElementById('cancelUploadBtn');
 
 let currentActiveJobId = null;
 let isJobPaused = false;
+let lastRecordedBytes = 0;
+let lastRecordedTime = 0;
+let smoothedSpeed = 0; // Bytes per second
+
+function formatSpeed(bytesPerSec) {
+  if (!bytesPerSec || bytesPerSec <= 0 || !isFinite(bytesPerSec)) return '-- MB/s';
+  const mbps = bytesPerSec / (1024 * 1024);
+  if (mbps >= 1) {
+    return `${mbps.toFixed(1)} MB/s`;
+  }
+  const kbps = bytesPerSec / 1024;
+  return `${kbps.toFixed(0)} KB/s`;
+}
+
+function formatEta(seconds) {
+  if (!seconds || seconds <= 0 || !isFinite(seconds)) return 'Finishing...';
+  if (seconds < 60) return `${Math.round(seconds)}s left`;
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.round(seconds % 60);
+  if (mins < 60) return `~${mins}m ${secs}s`;
+  const hours = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  return `~${hours}h ${remMins}m`;
+}
 
 // Success Banner
 const uploadSuccessBanner = document.getElementById('uploadSuccessBanner');
@@ -310,6 +336,10 @@ uploadForm.addEventListener('submit', async (e) => {
 function pollJobProgress(jobId) {
   currentActiveJobId = jobId;
   isJobPaused = false;
+  lastRecordedBytes = 0;
+  lastRecordedTime = 0;
+  smoothedSpeed = 0;
+
   pauseUploadBtn.innerText = '⏸️ Pause Upload';
   pauseUploadBtn.style.display = 'inline-flex';
   cancelUploadBtn.style.display = 'inline-flex';
@@ -322,17 +352,54 @@ function pollJobProgress(jobId) {
       if (!res.ok) return;
 
       const job = await res.json();
+      const now = Date.now();
+      const currentBytes = job.bytes_uploaded || 0;
+      const totalBytes = job.total_bytes || 0;
 
-      // Update progress
+      // Update progress bar
       const percent = job.progress_percent || 0;
       liveProgressBar.style.width = `${percent}%`;
       percentStats.innerText = `${percent}%`;
+
+      // Live Speed & ETA calculation
+      if (job.status === 'streaming') {
+        if (lastRecordedTime > 0 && currentBytes > lastRecordedBytes) {
+          const timeDelta = (now - lastRecordedTime) / 1000;
+          if (timeDelta >= 1) {
+            const instantSpeed = (currentBytes - lastRecordedBytes) / timeDelta;
+            if (smoothedSpeed === 0) {
+              smoothedSpeed = instantSpeed;
+            } else {
+              smoothedSpeed = (smoothedSpeed * 0.6) + (instantSpeed * 0.4);
+            }
+            lastRecordedBytes = currentBytes;
+            lastRecordedTime = now;
+
+            if (liveSpeedDisplay) {
+              liveSpeedDisplay.innerText = formatSpeed(smoothedSpeed);
+            }
+
+            if (liveEtaDisplay && totalBytes > 0) {
+              const remainingBytes = Math.max(0, totalBytes - currentBytes);
+              if (smoothedSpeed > 0) {
+                const remainingSecs = remainingBytes / smoothedSpeed;
+                liveEtaDisplay.innerText = formatEta(remainingSecs);
+              }
+            }
+          }
+        } else if (lastRecordedTime === 0) {
+          lastRecordedBytes = currentBytes;
+          lastRecordedTime = now;
+        }
+      }
 
       if (job.status === 'paused') {
         isJobPaused = true;
         pauseUploadBtn.innerText = '▶️ Resume Upload';
         transferStats.innerText = `⏸️ Paused at ${percent}% (${formatBytes(job.bytes_uploaded)} / ${formatBytes(job.total_bytes)})`;
         stepPipe.className = 'flow-step';
+        if (liveSpeedDisplay) liveSpeedDisplay.innerText = 'PAUSED';
+        if (liveEtaDisplay) liveEtaDisplay.innerText = 'PAUSED';
       } else if (job.status === 'streaming') {
         isJobPaused = false;
         pauseUploadBtn.innerText = '⏸️ Pause Upload';
@@ -353,6 +420,9 @@ function pollJobProgress(jobId) {
         percentStats.innerText = '100%';
         transferStats.innerText = 'Completed! Ready in YouTube Studio.';
 
+        if (liveSpeedDisplay) liveSpeedDisplay.innerText = 'DONE 🎉';
+        if (liveEtaDisplay) liveEtaDisplay.innerText = '0s';
+
         pauseUploadBtn.style.display = 'none';
         cancelUploadBtn.style.display = 'none';
 
@@ -369,6 +439,8 @@ function pollJobProgress(jobId) {
         clearInterval(activeJobPolling);
         transferStats.innerText = 'Upload cancelled by user.';
         showBanner('Upload cancelled.', 'error');
+        if (liveSpeedDisplay) liveSpeedDisplay.innerText = '-- MB/s';
+        if (liveEtaDisplay) liveEtaDisplay.innerText = 'Cancelled';
         pauseUploadBtn.style.display = 'none';
         cancelUploadBtn.style.display = 'none';
         startUploadBtn.disabled = false;
@@ -381,6 +453,9 @@ function pollJobProgress(jobId) {
         transferStats.innerText = 'Upload failed: ' + (job.error_message || 'Upload error');
         showBanner('Upload failed: ' + (job.error_message || 'Please check your connection'), 'error');
 
+        if (liveSpeedDisplay) liveSpeedDisplay.innerText = 'ERROR';
+        if (liveEtaDisplay) liveEtaDisplay.innerText = '--';
+
         pauseUploadBtn.style.display = 'none';
         cancelUploadBtn.style.display = 'none';
         startUploadBtn.disabled = false;
@@ -391,7 +466,7 @@ function pollJobProgress(jobId) {
     } catch (e) {
       console.warn('Poll error:', e);
     }
-  }, 1500);
+  }, 1200);
 }
 
 // Pause / Resume Button Handler

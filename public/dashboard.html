@@ -220,6 +220,18 @@
             </div>
           </div>
 
+          <!-- Live Big Speed & ETA Metrics -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0 14px 0;">
+            <div style="background: rgba(255, 32, 78, 0.08); border: 1px solid rgba(255, 32, 78, 0.3); border-radius: var(--radius-sm); padding: 14px 10px; text-align: center;">
+              <div style="font-size: 0.74rem; color: var(--text-secondary); text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 4px;">🚀 Upload Speed</div>
+              <div id="liveSpeedDisplay" style="font-size: 1.85rem; font-weight: 800; color: #ff204e; text-shadow: 0 0 25px rgba(255, 32, 78, 0.5); line-height: 1.2;">-- MB/s</div>
+            </div>
+            <div style="background: rgba(139, 92, 246, 0.08); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: var(--radius-sm); padding: 14px 10px; text-align: center;">
+              <div style="font-size: 0.74rem; color: var(--text-secondary); text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 4px;">⏱️ Estimated Time Remaining</div>
+              <div id="liveEtaDisplay" style="font-size: 1.85rem; font-weight: 800; color: #a78bfa; text-shadow: 0 0 25px rgba(139, 92, 246, 0.5); line-height: 1.2;">Calculating...</div>
+            </div>
+          </div>
+
           <div class="progress-bar-container">
             <div id="liveProgressBar" class="progress-bar"></div>
           </div>
