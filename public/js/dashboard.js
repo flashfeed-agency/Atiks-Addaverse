@@ -396,7 +396,22 @@ function pollJobProgress(jobId) {
 
 // Pause / Resume Button Handler
 pauseUploadBtn.addEventListener('click', async () => {
-  if (!currentActiveJobId) return;
+  if (!currentActiveJobId) {
+    // Find active job from server
+    try {
+      const res = await fetch('/api/upload/jobs');
+      const data = await res.json();
+      const active = (data.jobs || []).find(j => j.status === 'streaming' || j.status === 'paused');
+      if (active) currentActiveJobId = active.id;
+    } catch (e) {}
+  }
+
+  if (!currentActiveJobId) {
+    showBanner('No active upload found to pause.', 'error');
+    return;
+  }
+
+  pauseUploadBtn.disabled = true;
 
   try {
     if (isJobPaused) {
@@ -406,6 +421,7 @@ pauseUploadBtn.addEventListener('click', async () => {
         isJobPaused = false;
         pauseUploadBtn.innerText = '⏸️ Pause Upload';
         transferStats.innerText = 'Resuming upload...';
+        showBanner('Upload resumed.', 'success');
       }
     } else {
       // Pause
@@ -414,30 +430,51 @@ pauseUploadBtn.addEventListener('click', async () => {
         isJobPaused = true;
         pauseUploadBtn.innerText = '▶️ Resume Upload';
         transferStats.innerText = 'Upload paused.';
+        showBanner('Upload paused.', 'success');
       }
     }
   } catch (err) {
     showBanner('Failed to toggle pause: ' + err.message, 'error');
+  } finally {
+    pauseUploadBtn.disabled = false;
   }
 });
 
 // Cancel Upload Button Handler
 cancelUploadBtn.addEventListener('click', async () => {
-  if (!currentActiveJobId) return;
-  if (!confirm('Are you sure you want to cancel this upload?')) return;
+  if (!currentActiveJobId) {
+    try {
+      const res = await fetch('/api/upload/jobs');
+      const data = await res.json();
+      const active = (data.jobs || []).find(j => j.status === 'streaming' || j.status === 'paused');
+      if (active) currentActiveJobId = active.id;
+    } catch (e) {}
+  }
+
+  if (!currentActiveJobId) {
+    showBanner('No active upload found to cancel.', 'error');
+    return;
+  }
+
+  if (!confirm('Are you sure you want to cancel and discard this upload?')) return;
+
+  cancelUploadBtn.disabled = true;
 
   try {
     const res = await fetch(`/api/upload/jobs/${currentActiveJobId}/cancel`, { method: 'POST' });
     if (res.ok) {
-      showBanner('Upload cancelled successfully.', 'error');
+      showBanner('Upload cancelled and discarded.', 'success');
       if (activeJobPolling) clearInterval(activeJobPolling);
       pipelineContainer.style.display = 'none';
       startUploadBtn.disabled = false;
       startUploadBtn.innerHTML = `<span>Upload Direct to YouTube</span>`;
+      currentActiveJobId = null;
       loadUploadHistory();
     }
   } catch (err) {
     showBanner('Failed to cancel upload: ' + err.message, 'error');
+  } finally {
+    cancelUploadBtn.disabled = false;
   }
 });
 
@@ -449,6 +486,13 @@ async function loadUploadHistory() {
 
     const data = await res.json();
     const jobs = data.jobs || [];
+
+    // Automatically detect and restore active streaming/paused job on page load/refresh!
+    const activeJob = jobs.find(j => j.status === 'streaming' || j.status === 'paused');
+    if (activeJob && !activeJobPolling) {
+      pipelineContainer.style.display = 'block';
+      pollJobProgress(activeJob.id);
+    }
 
     if (jobs.length === 0) {
       historyTableBody.innerHTML = `

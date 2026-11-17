@@ -209,31 +209,23 @@ router.get('/jobs/:id', requireAuth, async (req, res) => {
 // Pause an active upload
 router.post('/jobs/:id/pause', requireAuth, async (req, res) => {
   const active = activeStreams.get(req.params.id);
-  if (!active || active.userId !== req.user.id) {
-    return res.status(404).json({ error: 'Active upload not found or already completed.' });
+  if (active && active.userId === req.user.id) {
+    if (active.pause) active.pause();
   }
 
-  if (active.pause) {
-    active.pause();
-    await db.run('UPDATE upload_jobs SET status = ? WHERE id = ?', ['paused', req.params.id]);
-    return res.json({ message: 'Upload paused.', status: 'paused' });
-  }
-  return res.status(400).json({ error: 'Cannot pause stream.' });
+  await db.run('UPDATE upload_jobs SET status = ? WHERE id = ? AND user_id = ?', ['paused', req.params.id, req.user.id]);
+  return res.json({ message: 'Upload paused.', status: 'paused' });
 });
 
 // Resume a paused upload
 router.post('/jobs/:id/resume', requireAuth, async (req, res) => {
   const active = activeStreams.get(req.params.id);
-  if (!active || active.userId !== req.user.id) {
-    return res.status(404).json({ error: 'Active upload not found.' });
+  if (active && active.userId === req.user.id) {
+    if (active.resume) active.resume();
   }
 
-  if (active.resume) {
-    active.resume();
-    await db.run('UPDATE upload_jobs SET status = ? WHERE id = ?', ['streaming', req.params.id]);
-    return res.json({ message: 'Upload resumed.', status: 'streaming' });
-  }
-  return res.status(400).json({ error: 'Cannot resume stream.' });
+  await db.run('UPDATE upload_jobs SET status = ? WHERE id = ? AND user_id = ?', ['streaming', req.params.id, req.user.id]);
+  return res.json({ message: 'Upload resumed.', status: 'streaming' });
 });
 
 // Cancel an active upload
