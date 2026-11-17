@@ -18,6 +18,7 @@ const statusBanner = document.getElementById('statusBanner');
 // Drive Player Elements
 const driveUrlInput = document.getElementById('driveUrlInput');
 const loadVideoBtn = document.getElementById('loadVideoBtn');
+const clearVideoBtn = document.getElementById('clearVideoBtn');
 const browseDriveBtn = document.getElementById('browseDriveBtn');
 const drivePickerModal = document.getElementById('drivePickerModal');
 const closeDrivePickerBtn = document.getElementById('closeDrivePickerBtn');
@@ -226,6 +227,7 @@ async function handleLoadVideo() {
       startUploadBtn.disabled = false;
     }
 
+    clearVideoBtn.style.display = 'inline-flex';
     showBanner('🎬 Video loaded! You can preview it above and upload directly to YouTube.', 'success');
 
   } catch (err) {
@@ -235,6 +237,15 @@ async function handleLoadVideo() {
     loadVideoBtn.innerText = 'Load & Play';
   }
 }
+
+// Stop & Close Video Player (Halts all buffering & network data)
+clearVideoBtn.addEventListener('click', () => {
+  videoIframe.src = '';
+  videoIframe.style.display = 'none';
+  playerPlaceholder.style.display = 'flex';
+  clearVideoBtn.style.display = 'none';
+  showBanner('⏹️ Video player stopped. Buffering halted.', 'success');
+});
 
 // 4. Start Direct Cloud-to-Cloud Upload
 uploadForm.addEventListener('submit', async (e) => {
